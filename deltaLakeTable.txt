@@ -1,0 +1,167 @@
+
+------------------------------------------------------------
+CREATE TABLE students
+  (id INT, name STRING, value DOUBLE);
+
+CREATE TABLE IF NOT EXISTS students 
+
+INSERT INTO students VALUES (1, "Yve", 1.0);
+INSERT INTO students VALUES (2, "Omar", 2.5);
+INSERT INTO students VALUES (3, "Elia", 3.3);
+
+INSERT INTO students
+VALUES 
+  (4, "Ted", 4.7),
+  (5, "Tiffany", 5.5),
+  (6, "Vini", 6.3)
+
+SELECT * FROM students
+
+UPDATE students 
+SET value = value + 1
+WHERE name LIKE "T%"
+
+DELETE FROM students 
+WHERE value > 6
+
+CREATE OR REPLACE TEMP VIEW updates(id, name, value, type) AS VALUES
+  (2, "Omar", 15.2, "update"),
+  (3, "", null, "delete"),
+  (7, "Blue", 7.7, "insert"),
+  (11, "Diya", 8.8, "update");
+   
+SELECT * FROM updates;
+
+
+MERGE INTO students b
+USING updates u
+ON b.id=u.id
+WHEN MATCHED AND u.type = "update"
+  THEN UPDATE SET *
+WHEN MATCHED AND u.type = "delete"
+  THEN DELETE
+WHEN NOT MATCHED AND u.type = "insert"
+  THEN INSERT *
+
+
+DROP TABLE students
+--------------------------------------------------------------
+
+
+lab
+--------------------------------------------------------------
+CREATE TABLE if not exists beans 
+(name string,color string,grams float,delicious boolean)
+
+%python
+assert spark.table("beans"), "Table named `beans` does not exist"
+assert spark.table("beans").columns == ["name", "color", "grams", "delicious"], "Please name the columns in the order provided above"
+assert spark.table("beans").dtypes == [("name", "string"), ("color", "string"), ("grams", "float"), ("delicious", "boolean")], "Please make sure the column types are identical to those provided above"
+
+INSERT INTO beans VALUES
+("black", "black", 500, true),
+("lentils", "brown", 1000, true),
+("jelly", "rainbow", 42.5, false)
+
+insert into beans values
+('pinto', 'brown', 1.5, true),
+('green', 'green', 178.3, true),
+('beanbag chair', 'white', 40000, false)
+
+%python
+assert spark.table("beans").count() == 6, "The table should have 6 records"
+assert spark.conf.get("spark.databricks.delta.lastCommitVersionInSession") == "2", "Only 3 commits should have been made to the table"
+assert set(row["name"] for row in spark.table("beans").select("name").collect()) == {'beanbag chair', 'black', 'green', 'jelly', 'lentils', 'pinto'}, "Make sure you have not modified the data provided"
+
+UPDATE beans
+SET delicious = true
+WHERE name = "jelly"
+
+update beans
+set grams  = 1500
+where name = 'pinto'
+
+
+%python
+assert spark.table("beans").filter("name='pinto'").count() == 1, "There should only be 1 entry for pinto beans"
+row = spark.table("beans").filter("name='pinto'").first()
+assert row["color"] == "brown", "The pinto bean should be labeled as the color brown"
+assert row["grams"] == 1500, "Make sure you correctly specified the `grams` as 1500"
+assert row["delicious"] == True, "The pinto bean is a delicious bean"
+
+delete from beans 
+where delicious =false
+
+%python
+assert spark.table("beans").filter("delicious=true").count() == 5, "There should be 5 delicious beans in your table"
+assert spark.table("beans").filter("name='beanbag chair'").count() == 0, "Make sure your logic deletes non-delicious beans"
+
+CREATE OR REPLACE TEMP VIEW new_beans(name, color, grams, delicious) AS VALUES
+('black', 'black', 60.5, true),
+('lentils', 'green', 500, true),
+('kidney', 'red', 387.2, true),
+('castor', 'brown', 25, false);
+
+SELECT * FROM new_beans
+
+-- TODO
+merge into beans a
+using new_beans b 
+on a.name = b.name and a.color = b.color
+when matched then 
+  update set grams = a.grams+b.grams
+when not matched and b.delicious = true then
+insert *
+
+%python
+version = spark.sql("DESCRIBE HISTORY beans").selectExpr("max(version)").first()[0]
+last_tx = spark.sql("DESCRIBE HISTORY beans").filter(f"version={version}")
+assert last_tx.select("operation").first()[0] == "MERGE", "Transaction should be completed as a merge"
+metrics = last_tx.select("operationMetrics").first()[0]
+assert metrics["numOutputRows"] == "3", "Make sure you only insert delicious beans"
+assert metrics["numTargetRowsUpdated"] == "1", "Make sure you match on name and color"
+assert metrics["numTargetRowsInserted"] == "2", "Make sure you insert newly collected beans"
+assert metrics["numTargetRowsDeleted"] == "0", "No rows should be deleted by this operation"
+
+drop table beans
+
+%python
+assert spark.sql("SHOW TABLES LIKE 'beans'").collect() == [], "Confirm that you have dropped the `beans` table from your current database"
+----------------------------------------------------------------------------
+
+
+CREATE TABLE students
+  (id INT, name STRING, value DOUBLE);
+  
+INSERT INTO students VALUES (1, "Yve", 1.0);
+INSERT INTO students VALUES (2, "Omar", 2.5);
+INSERT INTO students VALUES (3, "Elia", 3.3);
+
+INSERT INTO students
+VALUES 
+  (4, "Ted", 4.7),
+  (5, "Tiffany", 5.5),
+  (6, "Vini", 6.3);
+  
+UPDATE students 
+SET value = value + 1
+WHERE name LIKE "T%";
+
+DELETE FROM students 
+WHERE value > 6;
+
+CREATE OR REPLACE TEMP VIEW updates(id, name, value, type) AS VALUES
+  (2, "Omar", 15.2, "update"),
+  (3, "", null, "delete"),
+  (7, "Blue", 7.7, "insert"),
+  (11, "Diya", 8.8, "update");
+  
+MERGE INTO students b
+USING updates u
+ON b.id=u.id
+WHEN MATCHED AND u.type = "update"
+  THEN UPDATE SET *
+WHEN MATCHED AND u.type = "delete"
+  THEN DELETE
+WHEN NOT MATCHED AND u.type = "insert"
+  THEN INSERT *;
